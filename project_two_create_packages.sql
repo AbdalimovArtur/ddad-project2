@@ -1,3 +1,7 @@
+-- ****************************************************
+-- My Amazing Responsible Ideal Young Adorable Milady *
+-- ****************************************************
+
 CREATE OR REPLACE PACKAGE client_pkg IS
 
   PROCEDURE add_client(p_first_name IN B1_CLIENT.first_name%TYPE,
@@ -158,9 +162,6 @@ CREATE OR REPLACE PACKAGE BODY client_pkg IS
       VALUES(s_card_seq.nextval, p_client_id, v_random_cvc2, v_holder_name,
              ADD_MONTHS(SYSDATE, 48), SYSDATE, v_card_number, p_currency, v_credit_limit, v_credit_limit);
   END;
-
-
-  -- TODO: CREDIT SCORE
 
   END client_pkg;
 
