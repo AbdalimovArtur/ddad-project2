@@ -30,6 +30,7 @@ CREATE OR REPLACE PACKAGE client_pkg IS
   /
 
 CREATE OR REPLACE PACKAGE card_pkg IS
+    v_usd_to_kzt NUMBER := 332.005312;
     PROCEDURE check_credit_limit(p_client_id IN B1_CLIENT.client_id%TYPE);
     PROCEDURE print_balance(p_client_id IN B1_CLIENT.client_id%TYPE);
     PROCEDURE client_payment(p_client_id IN B1_CLIENT.client_id%TYPE, card_id IN B4_CREDIT_CARD.card_id%TYPE);
@@ -120,12 +121,43 @@ CREATE OR REPLACE PACKAGE BODY client_pkg IS
         END CASE;
     END;
 
-  PROCEDURE add_new_card(p_client_id IN B1_CLIENT.client_id%TYPE) IS
+  PROCEDURE add_new_card(p_client_id IN B1_CLIENT.client_id%TYPE,
+                         p_currency IN B4_CREDIT_CARD.currency%TYPE) IS
+    v_random_cvc2 B4_CREDIT_CARD.CVC2%TYPE;
+    v_card_number_first_octet NUMBER(4);
+    v_card_number_second_octet NUMBER(4);
+    v_card_number_third_octet NUMBER(4);
+    v_card_number_fourth_octet NUMBER(4);
+    v_holder_name B4_CREDIT_CARD.holder_name%TYPE;
+    v_card_number B4_CREDIT_CARD.card_number%TYPE;
+    v_credit_limit B4_CREDIT_CARD.credit_limit%TYPE;
   BEGIN
+    SELECT dbms_random.value(100, 999) INTO v_random_cvc2 FROM DUAL;
+    SELECT dbms_random.value(1000, 9999) INTO v_card_number_first_octet FROM DUAL;
+    SELECT dbms_random.value(1000, 9999) INTO v_card_number_second_octet FROM DUAL;
+    SELECT dbms_random.value(1000, 9999) INTO v_card_number_third_octet FROM DUAL;
+    SELECT dbms_random.value(1000, 9999) INTO v_card_number_fourth_octet FROM DUAL;
+    CASE p_currency
+      WHEN 'KZT' THEN
+        v_credit_limit := 100 * card_pkg.v_usd_to_kzt;
+      WHEN 'USD' THEN
+        v_credit_limit := 100;
+      END CASE;
+
+    SELECT INITCAP(first_name) || ' ' || INITCAP(last_name)
+    INTO v_holder_name
+    FROM B1_CLIENT
+    WHERE client_id = p_client_id;
+
+    v_card_number := v_card_number_first_octet ||'-'||  v_card_number_second_octet
+                     ||'-'|| v_card_number_third_octet ||'-'|| v_card_number_fourth_octet;
+
     INSERT INTO B4_CREDIT_CARD(card_id, p_client_id, cvc2, holder_name, expiration_date,
                               creation_date, card_number, currency, credit_limit,
                               balance)
-  END
+      VALUES(s_card_seq.nextval, p_client_id, v_random_cvc2, v_holder_name,
+             ADD_MONTHS(SYSDATE, 48), SYSDATE, v_card_number, p_currency, v_credit_limit, v_credit_limit);
+  END;
 
 
   -- TODO: CREDIT SCORE
