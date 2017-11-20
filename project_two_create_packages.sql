@@ -22,6 +22,16 @@ CREATE OR REPLACE PACKAGE client_pkg IS
                           p_phone_number IN B1_CLIENT.phone_number%TYPE
   );
 
+  PROCEDURE add_client_score_info(p_client_id                  IN B8_CREDIT_SCORE_INFO.client_id%TYPE,
+                                  p_credit_cards_amount        IN B8_CREDIT_SCORE_INFO.credit_cards_amount%TYPE,
+                                  p_first_card_taken_date      IN B8_CREDIT_SCORE_INFO.first_card_taken_date%TYPE,
+                                  p_first_loan_taken_date      IN B8_CREDIT_SCORE_INFO.first_loan_taken_date%TYPE,
+                                  p_last_card_taken_date       IN B8_CREDIT_SCORE_INFO.last_card_taken_date%TYPE,
+                                  p_active_cards               IN B8_CREDIT_SCORE_INFO.active_cards%TYPE,
+                                  p_last_miss_payment_date     IN B8_CREDIT_SCORE_INFO.last_miss_payment_date%TYPE,
+                                  p_total_amount_of_past_loans IN B8_CREDIT_SCORE_INFO.total_amount_of_past_loans%TYPE,
+                                  p_current_past_due_loans     IN B8_CREDIT_SCORE_INFO.current_past_due_loans%TYPE);
+
   PROCEDURE delete_client(p_client_id IN B1_CLIENT.client_id%TYPE);
   PROCEDURE auth_delete_client(p_client_id       IN B1_CLIENT.client_id%TYPE,
                                p_auth_officer_id IN B1_CLIENT.auth_officer_id%TYPE
@@ -64,7 +74,7 @@ CREATE OR REPLACE PACKAGE BODY client_pkg IS
                             p_auth_officer_id IN B1_CLIENT.auth_officer_id%TYPE) IS
     v_auth_officer_department B7_DEPARTMENTS.department_name%TYPE;
     BEGIN
-      SELECT B7_DEPARTMENTS.DEPARTMENT_NAME
+      SELECT department_name
       INTO v_auth_officer_department
       FROM B7_DEPARTMENTS d
       WHERE d.DEPARTMENT_ID = (SELECT DEPARTMENT_ID
@@ -121,7 +131,7 @@ CREATE OR REPLACE PACKAGE BODY client_pkg IS
                                p_auth_officer_id IN B1_CLIENT.auth_officer_id%TYPE) IS
     v_auth_officer_department B7_DEPARTMENTS.department_name%TYPE;
     BEGIN
-      SELECT B7_DEPARTMENTS.DEPARTMENT_NAME
+      SELECT DEPARTMENT_NAME
       INTO v_auth_officer_department
       FROM B7_DEPARTMENTS d
       WHERE d.DEPARTMENT_ID = (SELECT DEPARTMENT_ID
@@ -185,30 +195,180 @@ CREATE OR REPLACE PACKAGE BODY client_pkg IS
       v_card_number := v_card_number_first_octet || '-' || v_card_number_second_octet
                        || '-' || v_card_number_third_octet || '-' || v_card_number_fourth_octet;
 
-      INSERT INTO B4_CREDIT_CARD (card_id, p_client_id, cvc2, holder_name, expiration_date,
+      INSERT INTO B4_CREDIT_CARD (card_id, client_id, cvc2, holder_name, expiration_date,
                                   creation_date, card_number, currency, credit_limit,
                                   balance)
       VALUES (s_card_seq.nextval, p_client_id, v_random_cvc2, v_holder_name,
               ADD_MONTHS(SYSDATE, 48), SYSDATE, v_card_number, p_currency, v_credit_limit, v_credit_limit);
     END;
 
+  PROCEDURE add_client_score_info(p_client_id                  IN B8_CREDIT_SCORE_INFO.client_id%TYPE,
+                                  p_credit_cards_amount        IN B8_CREDIT_SCORE_INFO.credit_cards_amount%TYPE,
+                                  p_first_card_taken_date      IN B8_CREDIT_SCORE_INFO.first_card_taken_date%TYPE,
+                                  p_first_loan_taken_date      IN B8_CREDIT_SCORE_INFO.first_loan_taken_date%TYPE,
+                                  p_last_card_taken_date       IN B8_CREDIT_SCORE_INFO.last_card_taken_date%TYPE,
+                                  p_active_cards               IN B8_CREDIT_SCORE_INFO.active_cards%TYPE,
+                                  p_last_miss_payment_date     IN B8_CREDIT_SCORE_INFO.last_miss_payment_date%TYPE,
+                                  p_total_amount_of_past_loans IN B8_CREDIT_SCORE_INFO.total_amount_of_past_loans%TYPE,
+                                  p_current_past_due_loans     IN B8_CREDIT_SCORE_INFO.current_past_due_loans%TYPE) IS
+    BEGIN
+      INSERT INTO B8_CREDIT_SCORE_INFO (client_id,
+                                        credit_cards_amount,
+                                        first_card_taken_date,
+                                        first_loan_taken_date,
+                                        last_card_taken_date,
+                                        active_cards,
+                                        last_miss_payment_date,
+                                        total_amount_of_past_loans,
+                                        current_past_due_loans)
+      VALUES (p_client_id,
+        p_credit_cards_amount,
+        p_first_card_taken_date,
+        p_first_loan_taken_date,
+        p_last_card_taken_date,
+        p_active_cards,
+        p_last_miss_payment_date,
+        p_total_amount_of_past_loans,
+        p_current_past_due_loans);
+    END;
+
   -- TODO: WILL BE DONE LATER
+  -- https://www.youtube.com/watch?v=_UfyrhHqPkM
   PROCEDURE calculate_credit_score(p_client_id IN B1_CLIENT.client_id%TYPE) IS
     owner_record B8_CREDIT_SCORE_INFO%ROWTYPE;
+    v_credit_utilization NUMBER := 0;
+    v_credit_history NUMBER := 0;
+    v_payment_history NUMBER := 0;
+    v_credit_score_percent NUMBER := 0;
+    v_credit_score NUMBER := 0;
     BEGIN
+
       SELECT *
       INTO owner_record
       FROM B8_CREDIT_SCORE_INFO
       WHERE client_id = p_client_id;
 
+      IF owner_record.FIRST_LOAN_TAKEN_DATE IS NOT NULL THEN
+        IF owner_record.FIRST_LOAN_TAKEN_DATE > ADD_MONTHS(SYSDATE, -60) THEN
+          v_credit_history := 0.25;
+        ELSIF owner_record.FIRST_LOAN_TAKEN_DATE > ADD_MONTHS(SYSDATE, -24) THEN
+          v_credit_history := 0.15;
+        ELSE
+          v_credit_history := 0;
+        END IF;
+      END IF;
+
+      IF owner_record.FIRST_CARD_TAKEN_DATE IS NOT NULL THEN
+        IF owner_record.FIRST_CARD_TAKEN_DATE > ADD_MONTHS(SYSDATE, -60) THEN
+          v_credit_history := v_credit_history + 0.25;
+        ELSIF owner_record.FIRST_CARD_TAKEN_DATE > ADD_MONTHS(SYSDATE, -24) THEN
+          v_credit_history := v_credit_history + 0.15;
+        ELSE
+          v_credit_history := v_credit_history + 0;
+        END IF;
+      END IF;
+
+      IF owner_record.LAST_CARD_TAKEN_DATE IS NOT NULL THEN
+        IF owner_record.LAST_CARD_TAKEN_DATE > ADD_MONTHS(SYSDATE, -12) THEN
+          v_credit_history := v_credit_history + 0.50;
+        ELSIF owner_record.LAST_CARD_TAKEN_DATE > ADD_MONTHS(SYSDATE, -24) THEN
+          v_credit_history := v_credit_history + 0.25;
+        ELSE
+          v_credit_history := v_credit_history + 0.10;
+        END IF;
+      END IF;
+
+      IF owner_record.CREDIT_CARDS_AMOUNT IS NOT NULL THEN
+        IF owner_record.CREDIT_CARDS_AMOUNT >= 10 THEN
+          v_credit_utilization := v_credit_utilization + 0.25;
+        ELSIF owner_record.CREDIT_CARDS_AMOUNT >= 4 THEN
+          v_credit_utilization := v_credit_utilization + 0.10;
+        ELSIF owner_record.CREDIT_CARDS_AMOUNT >= 1 THEN
+          v_credit_utilization := v_credit_utilization + 0.05;
+        END IF;
+      END IF;
+
+      IF owner_record.ACTIVE_CARDS IS NOT NULL THEN
+        IF owner_record.ACTIVE_CARDS >= 5 THEN
+          v_credit_utilization := v_credit_utilization + 0.25;
+        ELSIF owner_record.ACTIVE_CARDS >= 2 THEN
+          v_credit_utilization := v_credit_utilization + 0.10;
+        ELSIF owner_record.ACTIVE_CARDS >= 1 THEN
+          v_credit_utilization := v_credit_utilization + 0.5;
+        END IF;
+      END IF;
+
+      IF owner_record.SALARY IS NOT NULL THEN
+        IF owner_record.SALARY >= 100000 THEN
+          v_credit_utilization := v_credit_utilization + 0.50;
+        ELSIF owner_record.SALARY >= 50000 THEN
+          v_credit_utilization := v_credit_utilization + 0.25;
+        ELSIF owner_record.SALARY >= 25000 THEN
+          v_credit_utilization := v_credit_utilization + 0.15;
+        ELSIF owner_record.SALARY >= 5000 THEN
+          v_credit_utilization := v_credit_utilization + 0.1;
+        ELSE
+          v_credit_utilization := v_credit_utilization + 0.05;
+        END IF;
+      END IF;
+
+      IF owner_record.CURRENT_PAST_DUE_LOANS IS NOT NULL THEN
+        IF owner_record.CURRENT_PAST_DUE_LOANS = 0 THEN
+          v_payment_history := v_payment_history + 0.25;
+        ELSIF owner_record.CURRENT_PAST_DUE_LOANS <= 1000 THEN
+          v_payment_history := v_payment_history + 0.15;
+        ELSIF owner_record.CURRENT_PAST_DUE_LOANS <= 5000 THEN
+          v_payment_history := v_payment_history + 0.1;
+        ELSIF owner_record.CURRENT_PAST_DUE_LOANS <= 10000 THEN
+          v_payment_history := v_payment_history + 0.05;
+        END IF;
+      END IF;
+
+      IF owner_record.TOTAL_AMOUNT_OF_PAST_LOANS IS NOT NULL THEN
+        IF owner_record.TOTAL_AMOUNT_OF_PAST_LOANS = 0 THEN
+          v_payment_history := v_payment_history + 0.25;
+        ELSIF owner_record.TOTAL_AMOUNT_OF_PAST_LOANS <= 1000 THEN
+          v_payment_history := v_payment_history + 0.20;
+        ELSIF owner_record.TOTAL_AMOUNT_OF_PAST_LOANS <= 5000 THEN
+          v_payment_history := v_payment_history + 0.15;
+        ELSIF owner_record.TOTAL_AMOUNT_OF_PAST_LOANS <= 10000 THEN
+          v_payment_history := v_payment_history + 0.1;
+        END IF;
+      END IF;
+
+
+      IF owner_record.last_miss_payment_date IS NOT NULL THEN
+        IF owner_record.last_miss_payment_date >= ADD_MONTHS(SYSDATE, -24) THEN
+          v_payment_history := v_payment_history + 0.05;
+        ELSIF owner_record.last_miss_payment_date >= ADD_MONTHS(SYSDATE, -12) THEN
+          v_payment_history := v_payment_history + 0.15;
+        ELSIF owner_record.last_miss_payment_date >= ADD_MONTHS(SYSDATE, -6) THEN
+          v_payment_history := v_payment_history + 0.25;
+        END IF;
+      END IF;
+
+      v_credit_score_percent := (v_payment_history * 35 / 100) + (v_credit_utilization * 30 / 100) + (v_credit_history * 35 / 100);
+      v_credit_score := v_credit_score * 900;
+
+      IF v_credit_score < 500 THEN
+        DBMS_OUTPUT.PUT_LINE('Can not calculate credit score for client ' || p_client_id);
+      ELSE
+        UPDATE B1_CLIENT SET CREDIT_SCORE = v_credit_score WHERE client_id = p_client_id;
+      END IF;
     END;
 
   -- TODO: WILL BE DONE LATER
-  PROCEDURE check_credit_score(p_client_id IN B1_CLIENT.client_id%TYPE);
+  PROCEDURE check_credit_score(p_client_id IN B1_CLIENT.client_id%TYPE) IS
+    v_credit_score B1_CLIENT.credit_score%TYPE;
+    BEGIN
+      calculate_credit_score(p_client_id);
+      SELECT credit_score INTO v_credit_score from B1_client WHERE client_id = p_client_id;
+      DBMS_OUTPUT.PUT_LINE('Credit score for client ' || p_client_id || ' is ' || v_credit_score);
+    END;
 
 
 END client_pkg;
-
+/
 
 CREATE OR REPLACE PACKAGE BODY card_pkg IS
 
@@ -248,9 +408,9 @@ CREATE OR REPLACE PACKAGE BODY card_pkg IS
 
   PROCEDURE make_client_payment(p_card_id IN       B4_CREDIT_CARD.card_id%TYPE,
                                 p_amount_been_paid B2_CLIENT_PAYMENT.PAID_FEE%TYPE) IS
-    v_unpaid_payment B2_CLIENT_PAYMENT%ROWTYPE;
-    v_overpayment    NUMBER := 0;
-    v_interest_m     NUMBER := 0;
+    v_unpaid_payment             B2_CLIENT_PAYMENT%ROWTYPE;
+    v_overpayment                NUMBER := 0;
+    v_interest_m                 NUMBER := 0;
     v_unpaid_money_with_interest NUMBER := 0;
     BEGIN
       SELECT *
@@ -268,7 +428,7 @@ CREATE OR REPLACE PACKAGE BODY card_pkg IS
             PAYMENT_DATE = SYSDATE
           WHERE payment_id = v_unpaid_payment.PAYMENT_ID;
 
-          v_overpayment = p_amount_been_paid + v_unpaid_payment.PAID_FEE - v_unpaid_payment.MONTHLY_FEE;
+          v_overpayment := p_amount_been_paid + v_unpaid_payment.PAID_FEE - v_unpaid_payment.MONTHLY_FEE;
           IF v_overpayment < 0
           THEN
             v_overpayment := 0;
@@ -285,7 +445,9 @@ CREATE OR REPLACE PACKAGE BODY card_pkg IS
           WHERE d.PAYMENT_ID = v_unpaid_payment.PAYMENT_ID;
         END IF;
       ELSE
-        v_unpaid_money_with_interest := (v_unpaid_payment.MONTHLY_FEE - v_unpaid_payment.PAID_FEE) * (SYSDATE - v_unpaid_payment.PAYMENT_DUE) * v_unpaid_payment.OVERDUE_INTEREST;
+        v_unpaid_money_with_interest :=
+        (v_unpaid_payment.MONTHLY_FEE - v_unpaid_payment.PAID_FEE) * (SYSDATE - v_unpaid_payment.PAYMENT_DUE) *
+        v_unpaid_payment.OVERDUE_INTEREST;
         IF p_amount_been_paid + v_unpaid_payment.PAID_FEE > v_unpaid_payment.MONTHLY_FEE + v_unpaid_money_with_interest
         THEN
           UPDATE B2_CLIENT_PAYMENT
@@ -294,7 +456,8 @@ CREATE OR REPLACE PACKAGE BODY card_pkg IS
             PAYMENT_DATE = SYSDATE
           WHERE payment_id = v_unpaid_payment.PAYMENT_ID;
 
-          v_overpayment = p_amount_been_paid + v_unpaid_payment.PAID_FEE - v_unpaid_payment.MONTHLY_FEE - v_unpaid_money_with_interest;
+          v_overpayment := p_amount_been_paid + v_unpaid_payment.PAID_FEE - v_unpaid_payment.MONTHLY_FEE -
+                           v_unpaid_money_with_interest;
           IF v_overpayment < 0
           THEN
             v_overpayment := 0;
@@ -314,5 +477,5 @@ CREATE OR REPLACE PACKAGE BODY card_pkg IS
 
     END;
 
-    END card_pkg;
-  /
+END card_pkg;
+/

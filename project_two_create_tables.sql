@@ -61,28 +61,31 @@ CREATE SCHEMA AUTHORIZATION PROJECT_TWO
     card_id NUMBER(6),
     monthly_fee NUMBER(8, 2),
     paid_fee NUMBER(8, 2),
-    overpayment NUMBER(8, 2),
     overdue_interest NUMBER(1, 1),
     payment_due DATE,
     payment_date DATE,
+    status NUMBER(1),
     FOREIGN KEY (card_id) REFERENCES B4_CREDIT_CARD(card_id)
   )
 
   CREATE TABLE B8_CREDIT_SCORE_INFO(
     client_id NUMBER(6),
+    --Payment History 35%
+    --Utilization 30%
+    --Credit History 35%
     credit_cards_amount NUMBER(3),
     first_card_taken_date DATE,
     first_loan_taken_date DATE,
     last_card_taken_date DATE,
     active_cards NUMBER(3),
+    salary NUMBER(8, 2),
     last_miss_payment_date DATE,
-    total_amount_of_loans NUMBER(10),
     total_amount_of_past_loans NUMBER(10),
     current_past_due_loans NUMBER(6),
     FOREIGN KEY (client_id) REFERENCES B1_CLIENT(client_id)
   )
 
-  CREATE TABLE B9_CLIENT_BACKLOG(
+  CREATE TABLE B9_CLIENT_ARCHIVE(
     client_id NUMBER(6),
     first_name VARCHAR2(50),
     last_name VARCHAR2(50),
@@ -101,6 +104,13 @@ CREATE SCHEMA AUTHORIZATION PROJECT_TWO
     NOCYCLE;
 
   CREATE SEQUENCE s_transactions_seq
+    START WITH 1
+    INCREMENT BY 1
+    CACHE 100
+    NOCYCLE;
+
+
+  CREATE SEQUENCE s_card_seq
     START WITH 1
     INCREMENT BY 1
     CACHE 100
